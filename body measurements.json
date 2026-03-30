@@ -1,0 +1,212 @@
+{
+  "name": "body measurements",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "measure-body",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryBinary",
+        "responseBinaryPropertyName": "front,side",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "1a81d9aa-6379-452e-8594-04ad071770f5",
+      "name": "Webhook",
+      "webhookId": "7ed388f7-7ff7-47cd-8c54-2b731227ff14"
+    },
+    {
+      "parameters": {
+        "jsCode": "if ($input.all().length === 0) {\n  throw new Error(\"No data received from the previous node.\");\n}\n\nconst item = $input.first();\nconst binaryData = item.binary || {};\n\nconst frontImage = binaryData['front'];\nconst sideImage = binaryData['side'];\n\nconst missing = [];\nif (!frontImage) missing.push(\"front_view\");\nif (!sideImage) missing.push(\"side_view\");\nif (missing.length > 0) {\n  return [{\n    json: {\n      error: \"Missing required images\",\n      missing_fields: missing,\n      status: \"failed\"\n    }\n  }];\n}\n\n// THIS IS THE FIX: read the actual file buffer from disk and convert to base64\nconst frontBuffer = await this.helpers.getBinaryDataBuffer(0, 'front');\nconst sideBuffer  = await this.helpers.getBinaryDataBuffer(0, 'side');\n\nconst frontBase64 = frontBuffer.toString('base64');\nconst sideBase64  = sideBuffer.toString('base64');\n\nreturn [{\n  json: {\n    analysis_metadata: {\n      timestamp: new Date().toISOString(),\n      ready_for_ai: true\n    },\n    images: {\n      front: {\n        base64: frontBase64,\n        mimeType: frontImage.mimeType,\n        fileName: frontImage.fileName\n      },\n      side: {\n        base64: sideBase64,\n        mimeType: sideImage.mimeType,\n        fileName: sideImage.fileName\n      }\n    }\n  },\n  binary: item.binary\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "707d778d-5a0e-4908-a6d7-f26df94f3ce5",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\nJSON.stringify({\n  contents: [\n    {\n      parts: [\n        {\n          inline_data: {\n            mime_type: $json.images.front.mimeType,\n            data: $json.images.front.base64\n          }\n        },\n        {\n          text: \"You are a professional tailor assistant with expertise in photogrammetry.\\n\\nYour task is to estimate body measurements from this photo.\\n\\nSTEP 1 - Find the A4 paper reference object:\\n- Look everywhere in the image for an A4 sheet of paper\\n- It may be on the wall, held by the person, on a table, anywhere\\n- Determine if it is in PORTRAIT orientation (29.7cm tall, 21cm wide) or LANDSCAPE orientation (21cm tall, 29.7cm wide)\\n- Measure its longest visible dimension in pixels\\n- Use that dimension as your reference: portrait height = 29.7cm, landscape width = 29.7cm\\n\\nSTEP 2 - Estimate body measurements in pixels:\\n- reference_height_px: the longest dimension of the A4 paper in pixels\\n- reference_real_cm: the real cm value of that dimension (29.7 or 21)\\n- shoulder_width_px: left shoulder edge to right shoulder edge\\n- chest_width_px: widest point of chest\\n- waist_width_px: narrowest point of torso\\n- hip_width_px: widest point of hips\\n- total_height_px: top of head to floor\\n\\nSTEP 3 - Return ONLY this JSON object, no other text:\\n{\\\"reference_height_px\\\": number, \\\"reference_real_cm\\\": number, \\\"shoulder_width_px\\\": number, \\\"chest_width_px\\\": number, \\\"waist_width_px\\\": number, \\\"hip_width_px\\\": number, \\\"total_height_px\\\": number, \\\"confidence\\\": \\\"high or medium or low\\\", \\\"notes\\\": \\\"string\\\"}\"\n        }\n      ]\n    }\n  ]\n})\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        496,
+        -96
+      ],
+      "id": "f46bbcb4-7a32-4d6e-ba28-65b2276993ed",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "OiX9oRmI8ejz7p25",
+          "name": "Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\nJSON.stringify({\n  contents: [\n    {\n      parts: [\n        {\n          inline_data: {\n            mime_type: $json.images.side.mimeType,\n            data: $json.images.side.base64\n          }\n        },\n        {\n          text: \"You are a professional tailor assistant with expertise in photogrammetry.\\n\\nYour task is to estimate body measurements from this SIDE VIEW photo.\\n\\nSTEP 1 - Find the A4 paper reference object:\\n- Look everywhere in the image for an A4 sheet of paper\\n- It may be on the wall, held by the person, on a table, anywhere\\n- Determine if it is in PORTRAIT orientation (29.7cm tall, 21cm wide) or LANDSCAPE orientation (21cm tall, 29.7cm wide)\\n- Measure its longest visible dimension in pixels\\n- Use that dimension as your reference: portrait height = 29.7cm, landscape width = 29.7cm\\n\\nSTEP 2 - Estimate body measurements in pixels:\\n- reference_height_px: the longest dimension of the A4 paper in pixels\\n- reference_real_cm: the real cm value of that dimension (29.7 or 21)\\n- chest_depth_px: front to back depth of chest\\n- stomach_depth_px: front to back depth of stomach\\n- back_length_px: top of shoulder to bottom of back\\n- arm_length_px: shoulder to wrist\\n- inseam_px: crotch to floor\\n\\nSTEP 3 - Return ONLY this JSON object, no other text:\\n{\\\"reference_height_px\\\": number, \\\"reference_real_cm\\\": number, \\\"chest_depth_px\\\": number, \\\"stomach_depth_px\\\": number, \\\"back_length_px\\\": number, \\\"arm_length_px\\\": number, \\\"inseam_px\\\": number, \\\"confidence\\\": \\\"high or medium or low\\\", \\\"notes\\\": \\\"string\\\"}\"\n        }\n      ]\n    }\n  ]\n})\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        496,
+        112
+      ],
+      "id": "6d589acb-4821-4557-89f6-b20aa3c398ad",
+      "name": "HTTP Request1",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "OiX9oRmI8ejz7p25",
+          "name": "Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Reference each node directly by its exact name\nconst frontData = $('HTTP Request').first().json;\nconst sideData  = $('HTTP Request1').first().json;\n\n// STEP 1: Extract text\nconst frontText = frontData.candidates[0].content.parts[0].text;\nconst sideText  = sideData.candidates[0].content.parts[0].text;\n\n// STEP 2: Clean and parse\nconst clean = str => str.replace(/```json|```/g, '').trim();\nlet front, side;\n\nconsole.log('Cleaned Front Text:', clean(frontText));\nconsole.log('Cleaned Side Text:', clean(sideText));\n\ntry {\n  front = JSON.parse(clean(frontText));\n} catch(e) {\n  throw new Error('Failed to parse front JSON: ' + frontText);\n}\ntry {\n  side = JSON.parse(clean(sideText));\n} catch(e) {\n  throw new Error('Failed to parse side JSON: ' + sideText);\n}\n\n// STEP 3: Smart scale — Gemini tells us the real cm value directly\nconst frontRefPx = front.reference_height_px || 0;\nconst sideRefPx  = side.reference_height_px  || 0;\n\nconst frontRefCm = front.reference_real_cm || 29.7;\nconst sideRefCm  = side.reference_real_cm  || 29.7;\n\nlet scale;\nif (frontRefPx > 0) {\n  scale = frontRefCm / frontRefPx;\n} else if (sideRefPx > 0) {\n  scale = sideRefCm / sideRefPx;\n} else {\n  throw new Error('No valid reference object detected in either photo. Make sure A4 paper is visible.');\n}\n\n// STEP 4: Helpers\nconst toWidth  = px => parseFloat((px * scale * 2).toFixed(1));\nconst toHeight = px => parseFloat((px * scale).toFixed(1));\n\n// STEP 5: Measurements\nconst measurements = {\n  height_cm:         toHeight(front.total_height_px),\n  shoulder_width_cm: toWidth(front.shoulder_width_px),\n  chest_circ_cm:     toWidth(front.chest_width_px),\n  waist_circ_cm:     toWidth(front.waist_width_px),\n  hip_circ_cm:       toWidth(front.hip_width_px),\n  chest_depth_cm:    toHeight(side.chest_depth_px),\n  stomach_depth_cm:  toHeight(side.stomach_depth_px),\n  back_length_cm:    toHeight(side.back_length_px),\n  arm_length_cm:     toHeight(side.arm_length_px),\n  inseam_cm:         toHeight(side.inseam_px),\n};\n\n// STEP 6: Table\nconst table = [\n  { measurement: 'Height',         value_cm: measurements.height_cm },\n  { measurement: 'Shoulder width', value_cm: measurements.shoulder_width_cm },\n  { measurement: 'Chest',          value_cm: measurements.chest_circ_cm },\n  { measurement: 'Waist',          value_cm: measurements.waist_circ_cm },\n  { measurement: 'Hips',           value_cm: measurements.hip_circ_cm },\n  { measurement: 'Chest depth',    value_cm: measurements.chest_depth_cm },\n  { measurement: 'Stomach depth',  value_cm: measurements.stomach_depth_cm },\n  { measurement: 'Back length',    value_cm: measurements.back_length_cm },\n  { measurement: 'Arm length',     value_cm: measurements.arm_length_cm },\n  { measurement: 'Inseam',         value_cm: measurements.inseam_cm },\n];\n\n// STEP 7: Return final result\nreturn [{\n  json: {\n    status: 'success',\n    confidence: front.confidence,\n    scale_factor: parseFloat(scale.toFixed(4)),\n    notes: { front: front.notes, side: side.notes },\n    measurements: measurements,\n    table: table\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        -48
+      ],
+      "id": "0d4b3070-20c1-458b-be73-f94d2209073c",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get measurements from Node 4\nconst data = $input.first().json;\nconst m = data.measurements;\nconst date = new Date().toLocaleDateString('fr-FR');\n\n// Build a clean HTML page that looks like a professional PDF report\nconst html = `<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"UTF-8\">\n<style>\n  body {\n    font-family: Arial, sans-serif;\n    margin: 40px;\n    color: #1a1a1a;\n    background: white;\n  }\n  .header {\n    text-align: center;\n    border-bottom: 3px solid #1a1a1a;\n    padding-bottom: 20px;\n    margin-bottom: 30px;\n  }\n  .header h1 {\n    font-size: 28px;\n    margin: 0;\n    letter-spacing: 2px;\n    text-transform: uppercase;\n  }\n  .header p {\n    color: #666;\n    margin: 6px 0 0;\n    font-size: 13px;\n  }\n  .meta {\n    display: flex;\n    justify-content: space-between;\n    background: #f5f5f5;\n    padding: 14px 20px;\n    border-radius: 6px;\n    margin-bottom: 30px;\n    font-size: 13px;\n  }\n  .meta span { color: #444; }\n  .meta strong { color: #1a1a1a; }\n  .section-title {\n    font-size: 13px;\n    font-weight: bold;\n    text-transform: uppercase;\n    letter-spacing: 1px;\n    color: #888;\n    margin: 24px 0 10px;\n    border-bottom: 1px solid #eee;\n    padding-bottom: 6px;\n  }\n  table {\n    width: 100%;\n    border-collapse: collapse;\n    margin-bottom: 10px;\n  }\n  th {\n    background: #1a1a1a;\n    color: white;\n    padding: 12px 16px;\n    text-align: left;\n    font-size: 13px;\n    letter-spacing: 0.5px;\n  }\n  td {\n    padding: 12px 16px;\n    font-size: 14px;\n    border-bottom: 1px solid #eee;\n  }\n  tr:nth-child(even) td { background: #fafafa; }\n  tr:last-child td { border-bottom: none; }\n  .value {\n    font-weight: bold;\n    font-size: 15px;\n    color: #1a1a1a;\n    text-align: right;\n  }\n  .confidence {\n    display: inline-block;\n    padding: 3px 10px;\n    border-radius: 20px;\n    font-size: 12px;\n    font-weight: bold;\n    background: ${data.confidence === 'high' ? '#d4edda' : data.confidence === 'medium' ? '#fff3cd' : '#f8d7da'};\n    color: ${data.confidence === 'high' ? '#155724' : data.confidence === 'medium' ? '#856404' : '#721c24'};\n  }\n  .footer {\n    margin-top: 40px;\n    text-align: center;\n    font-size: 11px;\n    color: #aaa;\n    border-top: 1px solid #eee;\n    padding-top: 16px;\n  }\n  .notes {\n    background: #fffbf0;\n    border-left: 3px solid #f0ad00;\n    padding: 12px 16px;\n    font-size: 12px;\n    color: #555;\n    margin-top: 20px;\n    border-radius: 0 6px 6px 0;\n  }\n</style>\n</head>\n<body>\n\n<div class=\"header\">\n  <h1>Body Measurements Report</h1>\n  <p>Generated automatically by AI vision analysis</p>\n</div>\n\n<div class=\"meta\">\n  <span><strong>Date:</strong> ${date}</span>\n  <span><strong>Confidence:</strong> <span class=\"confidence\">${data.confidence}</span></span>\n  <span><strong>Scale factor:</strong> ${data.scale_factor} cm/px</span>\n</div>\n\n<div class=\"section-title\">Front view measurements</div>\n<table>\n  <tr><th>Measurement</th><th style=\"text-align:right\">Value</th></tr>\n  <tr><td>Height</td><td class=\"value\">${m.height_cm} cm</td></tr>\n  <tr><td>Shoulder width</td><td class=\"value\">${m.shoulder_width_cm} cm</td></tr>\n  <tr><td>Chest circumference</td><td class=\"value\">${m.chest_circ_cm} cm</td></tr>\n  <tr><td>Waist circumference</td><td class=\"value\">${m.waist_circ_cm} cm</td></tr>\n  <tr><td>Hip circumference</td><td class=\"value\">${m.hip_circ_cm} cm</td></tr>\n</table>\n\n<div class=\"section-title\">Side view measurements</div>\n<table>\n  <tr><th>Measurement</th><th style=\"text-align:right\">Value</th></tr>\n  <tr><td>Chest depth</td><td class=\"value\">${m.chest_depth_cm} cm</td></tr>\n  <tr><td>Stomach depth</td><td class=\"value\">${m.stomach_depth_cm} cm</td></tr>\n  <tr><td>Back length</td><td class=\"value\">${m.back_length_cm} cm</td></tr>\n  <tr><td>Arm length</td><td class=\"value\">${m.arm_length_cm} cm</td></tr>\n  <tr><td>Inseam</td><td class=\"value\">${m.inseam_cm} cm</td></tr>\n</table>\n\n<div class=\"notes\">\n  <strong>Notes:</strong><br>\n  Front: ${data.notes.front}<br>\n  Side: ${data.notes.side}\n</div>\n\n<div class=\"footer\">\n  This report was generated by AI analysis. Measurements are estimates based on photo analysis.<br>\n  Always verify with a professional tailor before cutting fabric.\n</div>\n\n</body>\n</html>`;\n\n// Return the HTML as a binary file that n8n can pass to the next node\nconst binaryData = Buffer.from(html, 'utf8').toString('base64');\n\nreturn [{\n  json: {\n    status: 'success',\n    fileName: `measurements_${Date.now()}.html`,\n    measurements: m\n  },\n  binary: {\n    report: {\n      data: binaryData,\n      mimeType: 'text/html',\n      fileName: `measurements_${Date.now()}.html`\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        -48
+      ],
+      "id": "babd1357-690f-4db8-887f-13c563ca6038",
+      "name": "Code in JavaScript2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "6014664c-ebda-4127-8d4d-883f181c636b",
+  "meta": {
+    "instanceId": "22b63577ca448050137bc2c03b4f832a0f631e3e1c58a98cfaf93cb602e1817e"
+  },
+  "id": "ateX7C3DNpqrmLPO",
+  "tags": []
+}
